@@ -7,6 +7,7 @@ import time
 
 
 class Keys(Enum):
+    BACKSPACE = 127
     ARROW_UP = 1000
     ARROW_DOWN = 1001
     ARROW_LEFT = 1002
@@ -16,6 +17,7 @@ class Keys(Enum):
     HOME = 1006
     END = 1007
     DEL = 1008
+    ESCAPE = 1009
 
 
 class Editor:
@@ -37,8 +39,9 @@ class Editor:
         self.filename = ""
         self.tabSize = 4
         self.dirty = False
-        self.statusmsg = "HELP: Ctrl-Q to quit."
+        self.statusmsg = "HELP: Ctrl-Q to quit, CTRL-S to save"
         self.statusmsgTime = time.time()
+        self.quitTimes = 3
 
     # File I/O
 
@@ -46,10 +49,35 @@ class Editor:
         self.filename = filename
         file = open(filename, "r")
         for line in file.readlines():
-            self.appendRow(line)
+            self.insertRow(len(self.rows), line)
+        file.close()
+
+    def rowsToString(self):
+        string = ""
+        for row in self.rows:
+            string += row + "\n"
+        return string
+
+    def editorSave(self):
+        if self.filename == "":
+            self.filename = self.editorPrompt("Save as: %s (ESC to cancel)")
+
+        if self.filename == "":
+            self.setStatusMessage("Save aborted")
+            return
+        file = open(self.filename, "w+")
+        string = self.rowsToString()
+        file.write(string)
+        file.close()
+        self.dirty = False
+        self.setStatusMessage(f"{len(string)} bytes written to disk")
 
     def readKey(self):
         c = sys.stdin.read(1)
+
+        if c == "\u007f":
+            return Keys.BACKSPACE
+
         if c == "\x1b":
             seq = []
             seq.append(sys.stdin.read(1))
@@ -116,7 +144,7 @@ class Editor:
             case Keys.ARROW_RIGHT:
                 if row != "" and self.cursorX < len(row):
                     self.cursorX += 1
-                elif self.cursorX == len(row):
+                elif self.cursorX == len(row) and self.cursorY < len(self.rows):
                     self.cursorX = 0
                     self.cursorY += 1
 
@@ -126,13 +154,19 @@ class Editor:
 
     def processKeyPress(self):
         c = self.readKey()
-        self.dirty = True
         match c:
             case "\x11":  # CTRL-Q
+                if self.dirty and self.quitTimes > 0:
+                    self.setStatusMessage(
+                        f"Warning: file has unsaved changes. Press Ctrl-Q {self.quitTimes} more times to quit")
+                    self.quitTimes -= 1
+                    return
                 sys.stdout.write("\x1b[2J")
                 sys.stdout.write("\x1b[H")
                 self.disableRawMode()
                 exit(0)
+            case '\r':
+                self.insertNewLine()
             case Keys.ARROW_UP | Keys.ARROW_DOWN | Keys.ARROW_LEFT | Keys.ARROW_RIGHT:
                 self.moveCursor(c)
             case Keys.PAGE_UP:
@@ -150,8 +184,27 @@ class Editor:
             case Keys.END:
                 if self.cursorY < len(self.rows):
                     self.cursorX = len(self.rows[self.cursorY])
+
+            # TODO
+            case Keys.BACKSPACE | '\x08':  # CTRL-H
+                self.delChar()
+            case Keys.DEL:
+                if not self.cursorY == len(self.rows) - 1 or not self.cursorX == len(self.rows[len(self.rows) - 1]):
+                    self.moveCursor(Keys.ARROW_RIGHT)
+                self.delChar()
+
+            # Handle CTRL-L and Escape by not doing anything
+            case '\x0C':  # CTRL-L
+                pass
+            case '\x1b':
+                pass
+
+            case '\x13':  # CTRL-S
+                self.editorSave()
+
             case _:
                 self.insertChar(c)
+                self.quitTimes = 3
 
     # Row operations
 
@@ -170,6 +223,23 @@ class Editor:
         right = self.rows[y][at:]
         self.rows[y] = left + c + right
         self.updateRow(y)
+        self.dirty = True
+
+    def rowAppendString(self, at, string):
+        self.rows[at] += string
+        self.updateRow(at)
+        self.dirty = True
+
+    def rowDelChar(self, y, at):
+        if at < 0 or at >= len(self.rows[y]):
+            return
+        left = self.rows[y][:at]
+        right = self.rows[y][at:]
+        if len(right) > 0:
+            right = right[1:]
+        self.rows[y] = left + right
+        self.updateRow(y)
+        self.dirty = True
 
     def updateRow(self, at):
         tabs = 0
@@ -180,19 +250,28 @@ class Editor:
             else:
                 self.renderedRows[at] += self.rows[at][i]
 
-    def appendRow(self, string):
+    def insertRow(self, at, string):
         if string != "":
             if string[-1] == "\n":
                 string = string[:-1]
-        self.rows.append(string)
-        self.renderedRows.append("")
-        self.updateRow(len(self.rows) - 1)
+        self.rows.insert(at, string)
+        self.renderedRows.insert(at, "")
+        for i in range(at, len(self.rows)):
+            self.updateRow(i)
+
+    def delRow(self, at):
+        if at < 0 or at >= len(self.rows):
+            return
+        del self.rows[at]
+        for i in range(at, len(self.rows)):
+            self.updateRow(i)
+        self.dirty = True
 
     def drawRows(self):
         for y in range(0, self.screenrows):
             filerow = y + self.rowoffset
             if filerow >= len(self.rows):
-                if y == self.screenrows // 3 and self.filename == "":
+                if y == self.screenrows // 3 and self.filename == "" and not self.dirty:
                     welcome = f"Dyledit -- version {self.EDITOR_VERSION}"
                     padding = (self.screencols - len(welcome)) // 2
                     self.buffer += "~"
@@ -201,7 +280,7 @@ class Editor:
                         self.buffer += " "
                     self.buffer += welcome
 
-                elif y == self.screenrows // 3 + 1 and self.filename == "":
+                elif y == self.screenrows // 3 + 1 and self.filename == "" and not self.dirty:
                     python = "Python Edition"
                     padding = (self.screencols - len(python)) // 2
                     self.buffer += "~"
@@ -224,13 +303,16 @@ class Editor:
             self.buffer += "\x1b[K"
             self.buffer += "\r\n"
 
-    def setStatusMessage(self, string):
+    def setStatusMessage(self, string, *args):
+        string = string % args
         self.statusmsg = string
         self.statusmsgTime = time.time()
 
     def drawStatusBar(self):
         self.buffer += "\x1b[7m"
         status = f"{self.filename} - {len(self.rows)} lines"
+        if self.dirty == True:
+            status += " - modified"
         rstatus = f"{self.cursorY + 1}/{len(self.rows)}"
         self.buffer += status
         length = len(status)
@@ -269,9 +351,56 @@ class Editor:
 
     def insertChar(self, c):
         if (self.cursorY == len(self.rows)):
-            self.appendRow("")
+            self.insertRow(self.cursorY, "")
         self.rowInsertChar(self.cursorY, self.cursorX, c)
         self.cursorX += 1
+        self.dirty = True
+
+    def insertNewLine(self):
+        if self.cursorX == 0:
+            self.insertRow(self.cursorY, "")
+        else:
+            self.insertRow(self.cursorY + 1,
+                           self.rows[self.cursorY][self.cursorX:])
+            self.rows[self.cursorY] = self.rows[self.cursorY][:self.cursorX]
+            self.updateRow(self.cursorY)
+        self.cursorY += 1
+        self.cursorX = 0
+
+    def delChar(self):
+        if self.cursorY == len(self.rows):
+            return
+        if self.cursorX == 0 and self.cursorY == 0:
+            return
+
+        if self.cursorX > 0:
+            self.rowDelChar(self.cursorY, self.cursorX - 1)
+            self.cursorX -= 1
+        else:
+            self.cursorX = len(self.rows[self.cursorY - 1])
+            self.rowAppendString(self.cursorY - 1, self.rows[self.cursorY])
+            self.delRow(self.cursorY)
+            self.cursorY -= 1
+
+    def editorPrompt(self, prompt):
+        userInput = ""
+
+        while True:
+            self.setStatusMessage(prompt, userInput)
+            self.refreshScreen()
+
+            c = self.readKey()
+            if c == Keys.DEL or c == '\x08' or c == Keys.BACKSPACE:
+                userInput = userInput[:-1]
+            elif c == '\x1b' or c == Keys.ESCAPE:
+                self.setStatusMessage("")
+                return ""
+            elif c == '\r':
+                if len(userInput) > 0:
+                    self.setStatusMessage("")
+                    return userInput
+            elif ord(c) >= 32 and ord(c) <= 126:
+                userInput += c
 
     # Terminal Operations
 
@@ -285,9 +414,10 @@ class Editor:
     def disableRawMode(self):
         termios.tcsetattr(sys.stdin, termios.TCSANOW, self.orig_termios)
 
-    def die(self):
+    def die(self, errString):
         sys.stdout.write("\x1b[2J")
         sys.stdout.write("\x1b[H")
+        print(errString)
         self.disableRawMode()
         exit(0)
 

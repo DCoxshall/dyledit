@@ -1,0 +1,5 @@
+# A virtual environment is useful on a dev machine to ensure no dependencies are
+# introduced accidentally, but does not need to be distributed
+env/
+.vscode/
+__pycache__

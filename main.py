@@ -8,7 +8,12 @@ def main():
     E = Editor()
     E.enableRawMode()
     if len(sys.argv) == 2:
-        E.openFile(sys.argv[1])
+        try:
+            E.openFile(sys.argv[1])
+        except Exception as e:
+
+            E.die(str(e))
+
     while True:
         E.refreshScreen()
         E.processKeyPress()
