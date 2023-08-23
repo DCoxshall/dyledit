@@ -111,7 +111,7 @@ class Editor:
                     self.cursorY -= 1
                     self.cursorX = len(self.rows[self.cursorY])
             case Keys.ARROW_DOWN:
-                if self.cursorY < len(self.rows) - 1:
+                if self.cursorY < len(self.rows):
                     self.cursorY += 1
             case Keys.ARROW_RIGHT:
                 if row != "" and self.cursorX < len(row):
@@ -150,6 +150,8 @@ class Editor:
             case Keys.END:
                 if self.cursorY < len(self.rows):
                     self.cursorX = len(self.rows[self.cursorY])
+            case _:
+                self.insertChar(c)
 
     # Row operations
 
@@ -160,6 +162,14 @@ class Editor:
                 rx += (self.tabSize - 1) - (rx % self.tabSize)
             rx += 1
         return rx
+
+    def rowInsertChar(self, y, at, c):
+        if at < 0 or at > len(self.rows[y]):
+            at = len(self.rows[y])
+        left = self.rows[y][:at]
+        right = self.rows[y][at:]
+        self.rows[y] = left + c + right
+        self.updateRow(y)
 
     def updateRow(self, at):
         tabs = 0
@@ -256,6 +266,12 @@ class Editor:
             self.columnoffset = self.renderX
         if self.renderX >= self.columnoffset + self.screencols:
             self.columnoffset = self.renderX - self.screencols + 1
+
+    def insertChar(self, c):
+        if (self.cursorY == len(self.rows)):
+            self.appendRow("")
+        self.rowInsertChar(self.cursorY, self.cursorX, c)
+        self.cursorX += 1
 
     # Terminal Operations
 
