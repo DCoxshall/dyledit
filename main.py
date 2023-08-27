@@ -13,6 +13,7 @@ def main():
         except Exception as e:
 
             E.die(str(e))
+    E.setStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find")
 
     while True:
         E.refreshScreen()

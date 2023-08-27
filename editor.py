@@ -43,6 +43,10 @@ class Editor:
         self.statusmsgTime = time.time()
         self.quitTimes = 3
 
+        # Used for searching
+        self.search_last_match = -1
+        self.search_direction = 1
+
     # File I/O
 
     def openFile(self, filename):
@@ -60,7 +64,8 @@ class Editor:
 
     def editorSave(self):
         if self.filename == "":
-            self.filename = self.editorPrompt("Save as: %s (ESC to cancel)")
+            self.filename = self.editorPrompt(
+                "Save as: %s (ESC to cancel)", None)
 
         if self.filename == "":
             self.setStatusMessage("Save aborted")
@@ -71,6 +76,53 @@ class Editor:
         file.close()
         self.dirty = False
         self.setStatusMessage(f"{len(string)} bytes written to disk")
+
+    # find
+
+    def editorFind(self):
+        saved_cursorX = self.cursorX
+        saved_cursorY = self.cursorY
+        saved_columnoffset = self.columnoffset
+        saved_rowoffset = self.rowoffset
+
+        query = self.editorPrompt(
+            "Search: %s (ESC/Arrows/Enter)", self.editorFindCallback)
+        if query == "":
+            self.cursorX = saved_cursorX
+            self.cursorY = saved_cursorY
+            self.columnoffset = saved_columnoffset
+            self.rowoffset = saved_rowoffset
+
+    def editorFindCallback(self, query, key):
+        if key == '\r' or key == '\x1b':
+            self.search_last_match = -1
+            self.search_direction = 1
+            return
+        elif key == Keys.ARROW_RIGHT or key == Keys.ARROW_DOWN:
+            self.search_direction = 1
+        elif key == Keys.ARROW_LEFT or key == Keys.ARROW_UP:
+            self.search_direction = -1
+        else:
+            self.search_last_match = -1
+            self.search_direction = 1
+
+        if self.search_last_match == -1:
+            self.search_direction = 1
+        current = self.search_last_match
+        while current < len(self.rows):
+            current += self.search_direction
+            if current == -1:
+                current = len(self.rows) - 1
+            elif current == len(self.rows):
+                current = 0
+
+            if query in self.rows[current]:
+                self.search_last_match = current
+                self.cursorY = current
+                self.cursorX = self.rowRxToCx(
+                    self.rows[current], self.rows[current].index(query))
+                self.rowoff = len(self.rows)
+                break
 
     def readKey(self):
         c = sys.stdin.read(1)
@@ -184,6 +236,8 @@ class Editor:
             case Keys.END:
                 if self.cursorY < len(self.rows):
                     self.cursorX = len(self.rows[self.cursorY])
+            case 'F':
+                self.editorFind()
 
             # TODO
             case Keys.BACKSPACE | '\x08':  # CTRL-H
@@ -215,6 +269,18 @@ class Editor:
                 rx += (self.tabSize - 1) - (rx % self.tabSize)
             rx += 1
         return rx
+
+    def rowRxToCx(self, row, rx):
+        cur_rx = 0
+        cx = 0
+        while cx < len(row):
+            if row[cx] == '\t':
+                cur_rx += (self.tabSize - 1) - (cur_rx % self.tabSize)
+            cur_rx += 1
+            if cur_rx > rx:
+                return cx
+            cx += 1
+        return cx
 
     def rowInsertChar(self, y, at, c):
         if at < 0 or at > len(self.rows[y]):
@@ -382,7 +448,7 @@ class Editor:
             self.delRow(self.cursorY)
             self.cursorY -= 1
 
-    def editorPrompt(self, prompt):
+    def editorPrompt(self, prompt, callback):
         userInput = ""
 
         while True:
@@ -392,15 +458,24 @@ class Editor:
             c = self.readKey()
             if c == Keys.DEL or c == '\x08' or c == Keys.BACKSPACE:
                 userInput = userInput[:-1]
-            elif c == '\x1b' or c == Keys.ESCAPE:
+            elif c == '\x1b':
                 self.setStatusMessage("")
+                if callback != None:
+                    callback(userInput, c)
                 return ""
             elif c == '\r':
                 if len(userInput) > 0:
                     self.setStatusMessage("")
+                    if callback != None:
+                        callback(userInput, c)
                     return userInput
+            elif c == Keys.ARROW_DOWN or c == Keys.ARROW_LEFT or c == Keys.ARROW_RIGHT or c == Keys.ARROW_UP:
+                pass
             elif ord(c) >= 32 and ord(c) <= 126:
                 userInput += c
+
+            if callback != None:
+                callback(userInput, c)
 
     # Terminal Operations
 
