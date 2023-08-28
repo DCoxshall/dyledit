@@ -236,7 +236,7 @@ class Editor:
             case Keys.END:
                 if self.cursorY < len(self.rows):
                     self.cursorX = len(self.rows[self.cursorY])
-            case 'F':
+            case '\x06':  # CTRL-F
                 self.editorFind()
 
             # TODO
