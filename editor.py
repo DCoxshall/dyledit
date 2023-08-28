@@ -108,8 +108,13 @@ class Editor:
 
         if self.search_last_match == -1:
             self.search_direction = 1
+
+        finish = self.search_last_match - 1  # Used to prevent infinite searching
+        if finish < 0:
+            finish = len(self.rows) - 1
+
         current = self.search_last_match
-        while current < len(self.rows):
+        while current < len(self.rows) and current != finish:
             current += self.search_direction
             if current == -1:
                 current = len(self.rows) - 1
@@ -236,7 +241,7 @@ class Editor:
             case Keys.END:
                 if self.cursorY < len(self.rows):
                     self.cursorX = len(self.rows[self.cursorY])
-            case '\x06':  # CTRL-F
+            case 'F':  # CTRL-F = '\x06
                 self.editorFind()
 
             # TODO
