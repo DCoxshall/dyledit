@@ -497,6 +497,9 @@ class Editor:
         exit(0)
 
     def refreshScreen(self):
+        self.screencols = os.get_terminal_size().columns
+        self.screenrows = os.get_terminal_size().lines - 2
+
         self.scroll()
 
         self.buffer = ""
