@@ -4,6 +4,7 @@ from enum import Enum
 import tty
 import os
 import time
+import select
 
 
 class Keys(Enum):
@@ -108,8 +109,13 @@ class Editor:
 
         if self.search_last_match == -1:
             self.search_direction = 1
+
+        finish = self.search_last_match - 1  # Used to prevent infinite searching
+        if finish < 0:
+            finish = len(self.rows) - 1
+
         current = self.search_last_match
-        while current < len(self.rows):
+        while current < len(self.rows) and current != finish:
             current += self.search_direction
             if current == -1:
                 current = len(self.rows) - 1
@@ -125,7 +131,17 @@ class Editor:
                 break
 
     def readKey(self):
-        c = sys.stdin.read(1)
+        p = select.poll()
+
+        p.register(sys.stdin)
+        x = p.poll(1)
+
+        c = ""
+
+        if x == [(0, 4)]: # There's no data to read
+            return ""
+        else: # There is data to read
+            c = sys.stdin.read(1)
 
         if c == "\u007f":
             return Keys.BACKSPACE
@@ -207,6 +223,8 @@ class Editor:
     def processKeyPress(self):
         c = self.readKey()
         match c:
+            case "":
+                return
             case "\x11":  # CTRL-Q
                 if self.dirty and self.quitTimes > 0:
                     self.setStatusMessage(
@@ -236,7 +254,7 @@ class Editor:
             case Keys.END:
                 if self.cursorY < len(self.rows):
                     self.cursorX = len(self.rows[self.cursorY])
-            case 'F':
+            case '\x06':  # CTRL-F = '\x06'
                 self.editorFind()
 
             # TODO
@@ -456,6 +474,8 @@ class Editor:
             self.refreshScreen()
 
             c = self.readKey()
+            if c == "":
+                continue
             if c == Keys.DEL or c == '\x08' or c == Keys.BACKSPACE:
                 userInput = userInput[:-1]
             elif c == '\x1b':
@@ -497,6 +517,9 @@ class Editor:
         exit(0)
 
     def refreshScreen(self):
+        self.screencols = os.get_terminal_size().columns
+        self.screenrows = os.get_terminal_size().lines - 2
+
         self.scroll()
 
         self.buffer = ""
