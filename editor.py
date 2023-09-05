@@ -43,6 +43,8 @@ class Editor:
         self.statusmsg = "HELP: Ctrl-Q to quit, CTRL-S to save"
         self.statusmsgTime = time.time()
         self.quitTimes = 3
+        self.poller = select.poll()
+        self.poller.register(sys.stdin, 1)
 
         # Used for searching
         self.search_last_match = -1
@@ -131,14 +133,10 @@ class Editor:
                 break
 
     def readKey(self):
-        p = select.poll()
-
-        p.register(sys.stdin)
-        x = p.poll(1)
-
+        x = self.poller.poll(250)
         c = ""
 
-        if x == [(0, 4)]: # There's no data to read
+        if x == []: # There's no data to read
             return ""
         else: # There is data to read
             c = sys.stdin.read(1)
