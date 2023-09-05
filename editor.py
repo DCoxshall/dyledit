@@ -4,6 +4,7 @@ from enum import Enum
 import tty
 import os
 import time
+import select
 
 
 class Keys(Enum):
@@ -130,7 +131,17 @@ class Editor:
                 break
 
     def readKey(self):
-        c = sys.stdin.read(1)
+        p = select.poll()
+
+        p.register(sys.stdin)
+        x = p.poll(1)
+
+        c = ""
+
+        if x == [(0, 4)]: # There's no data to read
+            return ""
+        else: # There is data to read
+            c = sys.stdin.read(1)
 
         if c == "\u007f":
             return Keys.BACKSPACE
@@ -212,6 +223,8 @@ class Editor:
     def processKeyPress(self):
         c = self.readKey()
         match c:
+            case "":
+                return
             case "\x11":  # CTRL-Q
                 if self.dirty and self.quitTimes > 0:
                     self.setStatusMessage(
@@ -241,7 +254,7 @@ class Editor:
             case Keys.END:
                 if self.cursorY < len(self.rows):
                     self.cursorX = len(self.rows[self.cursorY])
-            case '\x06':  # CTRL-F = '\x06
+            case '\x06':  # CTRL-F = '\x06'
                 self.editorFind()
 
             # TODO
@@ -461,6 +474,8 @@ class Editor:
             self.refreshScreen()
 
             c = self.readKey()
+            if c == "":
+                continue
             if c == Keys.DEL or c == '\x08' or c == Keys.BACKSPACE:
                 userInput = userInput[:-1]
             elif c == '\x1b':
