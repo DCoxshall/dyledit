@@ -1,4 +1,4 @@
-import termios
+# import termios
 import sys
 from enum import Enum
 import tty
